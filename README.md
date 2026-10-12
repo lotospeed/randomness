@@ -42,12 +42,13 @@ offered: numpy's `random_raw` returns 32-bit values for it, which breaks the
 
 ```python
 from randomness import Generator
-from randomness.bit_generators import ChaCha20, HMAC_DRBG, SystemBitGenerator
+from randomness.bit_generators import AESCounter, ChaCha20, HMAC_DRBG, SystemBitGenerator
 
 g = Generator(SystemBitGenerator())          # the OS CSPRNG; no seed or state
 g = Generator(HMAC_DRBG())                   # NIST SP 800-90A, stdlib only
 g = Generator(HMAC_DRBG(seed48, hash="sha512", personalization=b"app"))
 g = Generator(ChaCha20(b"k" * 32))           # needs the 'crypto' extra
+g = Generator(AESCounter(b"k" * 32))         # AES-256-CTR; needs the 'crypto' extra
 ```
 
 | class | seed | needs | notes |
@@ -55,6 +56,7 @@ g = Generator(ChaCha20(b"k" * 32))           # needs the 'crypto' extra
 | `SystemBitGenerator` | none | stdlib | like `random.SystemRandom`; buffer dropped on `fork` |
 | `HMAC_DRBG` | >= 48 bytes (entropy + nonce) or `None` | stdlib | passes NIST CAVP vectors; `reseed`, `generate` |
 | `ChaCha20` | exactly 32 bytes or `None` | `pycryptodome` (`pip install 'randomness[crypto]'`) | fast key erasure; `reseed` |
+| `AESCounter` | exactly 32 bytes or `None` | `pycryptodome` (`pip install 'randomness[crypto]'`) | AES-256-CTR, fast key erasure; `reseed` |
 
 The seeded generators are deterministic, so they are only as secret as their
 seed. Their `state`, and therefore `getstate()`, `copy` and `pickle`, contain

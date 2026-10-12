@@ -7,15 +7,16 @@ import struct
 import unittest
 
 try:
+    from Crypto.Cipher import AES as _aes
     from Crypto.Cipher import ChaCha20 as _cc
 except ImportError:
-    _cc = None
+    _aes = _cc = None
 
 from randomness import Generator, SplitMix64
 from randomness.bit_generators import HMAC_DRBG, SystemBitGenerator
 
 if _cc is not None:
-    from randomness.bit_generators import ChaCha20
+    from randomness.bit_generators import AESCounter, ChaCha20
 
 
 def _rotl(x, n):
@@ -49,8 +50,86 @@ ZERO_VECTOR = bytes.fromhex(
 )
 
 
+class _FastKeyErasureTests:
+    """Behaviour shared by ChaCha20 and AESCounter; ``cls`` is the class under test."""
+
+    def test_seeding(self):
+        a, b = self.cls(bytes(32)), self.cls(bytes(32))
+        self.assertEqual([a.random_raw() for _ in range(300)],
+                         [b.random_raw() for _ in range(300)])
+        self.assertNotEqual(self.cls().random_raw(), self.cls().random_raw())
+        for bad in (b"short", bytes(33)):
+            with self.assertRaises(ValueError):
+                self.cls(bad)
+        for bad in (123, "x" * 32):
+            with self.assertRaises(TypeError):
+                self.cls(bad)
+
+    def test_reseed(self):
+        a, b = self.cls(bytes(32)), self.cls(bytes(32))
+        a.reseed(b"e" * 16)
+        self.assertNotEqual(a.random_raw(), b.random_raw())
+        a, b = self.cls(bytes(32)), self.cls(bytes(32))
+        a.reseed(b"e" * 16)
+        b.reseed(b"e" * 16)
+        self.assertEqual(a.random_raw(), b.random_raw())
+        c = self.cls(bytes(32))
+        c.reseed(b"f" * 16)
+        self.assertNotEqual(a.random_raw(), c.random_raw())
+        with self.assertRaises(ValueError):
+            a.reseed(b"short")
+
+    def test_state_roundtrip_mid_buffer(self):
+        g = self.cls(bytes(32))
+        for _ in range(50):
+            g.random_raw()
+        st = g.state
+        expected = [g.random_raw() for _ in range(300)]
+        h = self.cls(bytes([1]) * 32)
+        h.state = st
+        self.assertEqual([h.random_raw() for _ in range(300)], expected)
+
+    def test_state_validation(self):
+        g = self.cls(bytes(32))
+        for bad in ({"key": b"x", "buffer": b""},
+                    {"key": bytes(32), "buffer": b"123"},
+                    {"key": bytes(32), "buffer": bytes(8 * 125)}):
+            with self.assertRaises(ValueError):
+                g.state = bad
+
+    def test_copy_and_pickle_are_independent(self):
+        g = self.cls(bytes(32))
+        g.random_raw()
+        expected = _take(copy.deepcopy(g), 200)
+        for c in (copy.copy(g), copy.deepcopy(g), pickle.loads(pickle.dumps(g))):
+            self.assertIsNot(c, g)
+            self.assertEqual(_take(c, 200), expected)
+        self.assertEqual(_take(g, 200), expected)  # originals unaffected
+
+    def test_repr_hides_state(self):
+        g = self.cls(bytes(range(32)))
+        self.assertNotIn(g.state["key"].hex(), repr(g))
+        self.assertNotIn(str(g.state["key"]), repr(g))
+
+    def test_with_generator(self):
+        g = Generator(self.cls(bytes(32)))
+        h = Generator(self.cls(bytes(32)))
+        self.assertEqual([g.randrange(10**6) for _ in range(500)],
+                         [h.randrange(10**6) for _ in range(500)])
+        st = g.getstate()
+        a = [g.gauss() for _ in range(5)]
+        g.setstate(st)
+        self.assertEqual(a, [g.gauss() for _ in range(5)])
+        g.seed(bytes(32))
+        self.assertEqual(g.random(), Generator(self.cls(bytes(32))).random())
+        c = copy.copy(g)
+        self.assertEqual(c.random(), g.random())
+
+
 @unittest.skipIf(_cc is None, "pycryptodome not installed")
-class TestChaCha20(unittest.TestCase):
+class TestChaCha20(_FastKeyErasureTests, unittest.TestCase):
+    cls = property(lambda self: ChaCha20)
+
     def test_reference_block_matches_known_vector(self):
         self.assertEqual(reference_block(bytes(32), 0, bytes(8)), ZERO_VECTOR)
 
@@ -71,77 +150,51 @@ class TestChaCha20(unittest.TestCase):
         stream = b"".join(reference_block(key2, i, bytes(8)) for i in range(16))
         self.assertEqual(gen.random_raw(), struct.unpack("<Q", stream[32:40])[0])
 
-    def test_seeding(self):
-        a, b = ChaCha20(bytes(32)), ChaCha20(bytes(32))
-        self.assertEqual([a.random_raw() for _ in range(300)],
-                         [b.random_raw() for _ in range(300)])
-        self.assertNotEqual(ChaCha20().random_raw(), ChaCha20().random_raw())
-        for bad in (b"short", bytes(33)):
-            with self.assertRaises(ValueError):
-                ChaCha20(bad)
-        for bad in (123, "x" * 32):
-            with self.assertRaises(TypeError):
-                ChaCha20(bad)
 
-    def test_reseed(self):
-        a, b = ChaCha20(bytes(32)), ChaCha20(bytes(32))
-        a.reseed(b"e" * 16)
-        self.assertNotEqual(a.random_raw(), b.random_raw())
-        a, b = ChaCha20(bytes(32)), ChaCha20(bytes(32))
-        a.reseed(b"e" * 16)
-        b.reseed(b"e" * 16)
-        self.assertEqual(a.random_raw(), b.random_raw())
-        c = ChaCha20(bytes(32))
-        c.reseed(b"f" * 16)
-        self.assertNotEqual(a.random_raw(), c.random_raw())
-        with self.assertRaises(ValueError):
-            a.reseed(b"short")
+# FIPS 197 appendix C.3: AES-256, key 00..1f.
+FIPS197_PLAIN = bytes.fromhex("00112233445566778899aabbccddeeff")
+FIPS197_CIPHER = bytes.fromhex("8ea2b7ca516745bfeafc49904b496089")
 
-    def test_state_roundtrip_mid_buffer(self):
-        g = ChaCha20(bytes(32))
-        for _ in range(50):
-            g.random_raw()
-        st = g.state
-        expected = [g.random_raw() for _ in range(300)]
-        h = ChaCha20(bytes([1]) * 32)
-        h.state = st
-        self.assertEqual([h.random_raw() for _ in range(300)], expected)
 
-    def test_state_validation(self):
-        g = ChaCha20(bytes(32))
-        for bad in ({"key": b"x", "buffer": b""},
-                    {"key": bytes(32), "buffer": b"123"},
-                    {"key": bytes(32), "buffer": bytes(8 * 125)}):
-            with self.assertRaises(ValueError):
-                g.state = bad
+def aes_ctr_reference(key, blocks):
+    """AES-256-CTR keystream built block by block from single-block ECB calls."""
+    ecb = _aes.new(key, _aes.MODE_ECB)
+    return b"".join(ecb.encrypt(i.to_bytes(16, "big")) for i in range(blocks))
 
-    def test_copy_and_pickle_are_independent(self):
-        g = ChaCha20(bytes(32))
-        g.random_raw()
-        expected = _take(copy.deepcopy(g), 200)
-        for c in (copy.copy(g), copy.deepcopy(g), pickle.loads(pickle.dumps(g))):
-            self.assertIsNot(c, g)
-            self.assertEqual(_take(c, 200), expected)
-        self.assertEqual(_take(g, 200), expected)  # originals unaffected
 
-    def test_repr_hides_state(self):
-        g = ChaCha20(bytes(range(32)))
-        self.assertNotIn(g.state["key"].hex(), repr(g))
-        self.assertNotIn(str(g.state["key"]), repr(g))
+@unittest.skipIf(_cc is None, "pycryptodome not installed")
+class TestAESCounter(_FastKeyErasureTests, unittest.TestCase):
+    cls = property(lambda self: AESCounter)
 
-    def test_with_generator(self):
-        g = Generator(ChaCha20(bytes(32)))
-        h = Generator(ChaCha20(bytes(32)))
-        self.assertEqual([g.randrange(10**6) for _ in range(500)],
-                         [h.randrange(10**6) for _ in range(500)])
-        st = g.getstate()
-        a = [g.gauss() for _ in range(5)]
-        g.setstate(st)
-        self.assertEqual(a, [g.gauss() for _ in range(5)])
-        g.seed(bytes(32))
-        self.assertEqual(g.random(), Generator(ChaCha20(bytes(32))).random())
-        c = copy.copy(g)
-        self.assertEqual(c.random(), g.random())
+    def test_reference_matches_known_vector(self):
+        ecb = _aes.new(bytes(range(32)), _aes.MODE_ECB)
+        self.assertEqual(ecb.encrypt(FIPS197_PLAIN), FIPS197_CIPHER)
+
+    def test_known_answer(self):
+        # AES-256 of counter block 2 under the all-zero key (the first
+        # keystream block of NIST GCM test case 14); blocks 0-1 are the next key.
+        gen = AESCounter(bytes(32))
+        expected = struct.unpack("<2Q", bytes.fromhex("cea7403d4d606b6e074ec5d3baf39d18"))
+        self.assertEqual([gen.random_raw(), gen.random_raw()], list(expected))
+
+    def test_output_matches_independent_aes(self):
+        key = bytes(range(32))
+        gen = AESCounter(key)
+        expected = struct.unpack("<124Q", aes_ctr_reference(key, 64)[32:])
+        self.assertEqual([gen.random_raw() for _ in range(124)], list(expected))
+
+    def test_key_erasure_chain(self):
+        key = bytes(range(32))
+        gen = AESCounter(key)
+        for _ in range(124):
+            gen.random_raw()
+        # Second refill runs under the first 32 keystream bytes of the first.
+        key2 = aes_ctr_reference(key, 2)
+        stream = aes_ctr_reference(key2, 64)
+        self.assertEqual(gen.random_raw(), struct.unpack("<Q", stream[32:40])[0])
+
+    def test_differs_from_chacha20(self):
+        self.assertNotEqual(_take(AESCounter(bytes(32)), 4), _take(ChaCha20(bytes(32)), 4))
 
 
 def _take(bg, n):

@@ -9,12 +9,12 @@ Two sections:
 Everything is re-exported here.
 """
 
-from .csrng import ChaCha20, HMAC_DRBG, SystemBitGenerator
+from .csrng import AESCounter, ChaCha20, HMAC_DRBG, SystemBitGenerator
 from .prng import PCG64, SFC64, Philox, SplitMix64
 
 __all__ = [
     # prng
     "SplitMix64", "PCG64", "Philox", "SFC64",
     # csrng
-    "ChaCha20", "HMAC_DRBG", "SystemBitGenerator",
+    "AESCounter", "ChaCha20", "HMAC_DRBG", "SystemBitGenerator",
 ]
