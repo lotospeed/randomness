@@ -34,7 +34,60 @@ def _cipher(name: str) -> Any:
     return module
 
 
-class _FastKeyErasure:
+class _BufferedWords:
+    """Serves 64-bit words, or bytes, from blocks produced by ``_next_block``.
+
+    Subclasses provide a ``_words`` slot (unread words, reversed so ``pop()``
+    yields them in output order) and implement ``_next_block``.
+    """
+
+    __slots__ = ()
+
+    def _next_block(self) -> bytes:
+        """Advance the state and return the next output block (a multiple of 8 bytes)."""
+        raise NotImplementedError
+
+    def random_raw(self) -> int:
+        """Return the next 64-bit unsigned int."""
+        words = self._words
+        if not words:
+            block = self._next_block()
+            words = self._words = list(
+                reversed(struct.unpack(f"<{len(block) // 8}Q", block))
+            )
+        return words.pop()
+
+    def random_bytes(self, n: int) -> bytes:
+        """Return ``n`` bytes: the next ``ceil(n / 8)`` words, little-endian.
+
+        The same stream as ``random_raw``, without the round trip through
+        ints.  A trailing partial word is consumed whole.
+        """
+        if n < 0:
+            raise ValueError("number of bytes must be non-negative")
+        nwords = -(-n // 8)
+        words = self._words
+        have = len(words)
+        if nwords <= have:
+            taken = words[have - nwords:]
+            del words[have - nwords:]
+            taken.reverse()
+            return struct.pack(f"<{nwords}Q", *taken)[:n]
+        chunks = [struct.pack(f"<{have}Q", *reversed(words))]
+        self._words = []
+        need = 8 * (nwords - have)
+        while need:
+            block = self._next_block()
+            if len(block) > need:
+                rest = block[need:]
+                self._words = list(reversed(struct.unpack(f"<{len(rest) // 8}Q", rest)))
+                block = block[:need]
+            chunks.append(block)
+            need -= len(block)
+        return b"".join(chunks)[:n]
+
+
+class _FastKeyErasure(_BufferedWords):
     """A stream cipher run as a CSPRNG with fast key erasure (Bernstein, 2017).
 
     Each refill produces ``_REFILL_BYTES`` of keystream under the current key
@@ -87,21 +140,10 @@ class _FastKeyErasure:
         self._key = hashlib.blake2b(entropy, key=self._key, digest_size=_KEY_BYTES).digest()
         self._words = []
 
-    def _refill(self) -> None:
+    def _next_block(self) -> bytes:
         stream = self._keystream(self._REFILL_BYTES)
         self._key = stream[:_KEY_BYTES]
-        # Reversed so random_raw can pop() from the end in output order.
-        self._words = list(
-            reversed(struct.unpack(f"<{self._WORDS_PER_REFILL}Q", stream[_KEY_BYTES:]))
-        )
-
-    def random_raw(self) -> int:
-        """Return the next 64-bit unsigned int."""
-        words = self._words
-        if not words:
-            self._refill()
-            words = self._words
-        return words.pop()
+        return stream[_KEY_BYTES:]
 
     @property
     def state(self) -> dict[str, bytes]:
@@ -188,7 +230,7 @@ class AESCounter(_FastKeyErasure):
         return aes.new(self._key, aes.MODE_CTR, nonce=b"", initial_value=0).encrypt(bytes(n))
 
 
-class HMAC_DRBG:
+class HMAC_DRBG(_BufferedWords):
     """HMAC_DRBG as specified in NIST SP 800-90A rev. 1, section 10.1.2.
 
     Parameters
@@ -303,17 +345,8 @@ class HMAC_DRBG:
 
     # -- BitGenerator interface ----------------------------------------------
 
-    def _refill(self) -> None:
-        data = self.generate(self._REFILL_BYTES)
-        self._words = list(reversed(struct.unpack(f"<{len(data) // 8}Q", data)))
-
-    def random_raw(self) -> int:
-        """Return the next 64-bit unsigned int."""
-        words = self._words
-        if not words:
-            self._refill()
-            words = self._words
-        return words.pop()
+    def _next_block(self) -> bytes:
+        return self.generate(self._REFILL_BYTES)
 
     @property
     def state(self) -> dict[str, Any]:
@@ -393,6 +426,10 @@ class SystemBitGenerator:
             data = os.urandom(self._REFILL_BYTES)
             words = self._words = list(struct.unpack(f"<{len(data) // 8}Q", data))
         return words.pop()
+
+    def random_bytes(self, n: int) -> bytes:
+        """Return ``n`` bytes straight from ``os.urandom``, bypassing the buffer."""
+        return os.urandom(n)
 
     def __reduce__(self) -> tuple[Any, ...]:
         return type(self), ()

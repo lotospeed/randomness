@@ -16,6 +16,11 @@ but every value is derived solely from `bit_generator.random_raw()` (a uniform
 `PCG64`, `Philox`, etc. Optional `seed()` / `state` members on the bit
 generator enable `Generator.seed`, `getstate`/`setstate`, `copy` and `pickle`.
 
+A bit generator may also offer `random_bytes(n)`, the same stream as
+`random_raw()` served as bytes. `Generator.randbytes` uses it when present:
+the output is identical, only faster. Every generator here except `SplitMix64`
+has it; `SystemBitGenerator`'s reads `os.urandom` directly.
+
 ## Bit generators
 
 `randomness.bit_generators` has two sections; import each generator from its section:

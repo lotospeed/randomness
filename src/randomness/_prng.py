@@ -110,6 +110,27 @@ class _NumpyBitGenerator:
             self._words = words
         return words.pop()
 
+    def random_bytes(self, n: int) -> bytes:
+        """Return ``n`` bytes: the next ``ceil(n / 8)`` words, little-endian.
+
+        The same stream as ``random_raw``, without the round trip through
+        ints.  A trailing partial word is consumed whole.
+        """
+        if n < 0:
+            raise ValueError("number of bytes must be non-negative")
+        nwords = -(-n // 8)
+        words = self._words
+        have = len(words)
+        if nwords <= have:
+            taken = words[have - nwords:]
+            del words[have - nwords:]
+            taken.reverse()
+            return struct.pack(f"<{nwords}Q", *taken)[:n]
+        head = struct.pack(f"<{have}Q", *reversed(words))
+        self._words = []
+        tail = self._bg.random_raw(nwords - have).astype("<u8", copy=False).tobytes()
+        return (head + tail)[:n]
+
     @property
     def state(self) -> dict[str, Any]:
         n = len(self._words)

@@ -13,12 +13,15 @@ MASK64 = (1 << 64) - 1
 class BitGenerator(Protocol):
     """Anything that can produce uniformly distributed 64-bit unsigned ints.
 
-    Only ``random_raw`` is required.  Two optional members add features to
+    Only ``random_raw`` is required.  Three optional members add features to
     :class:`~randomness.Generator`:
 
     * ``seed(*args, **kwargs)`` enables ``Generator.seed``.
     * a ``state`` property (readable and writable) enables ``getstate``,
       ``setstate``, ``copy`` and ``pickle``.
+    * ``random_bytes(n)`` speeds up ``Generator.randbytes``.  It must return
+      the little-endian bytes of the next ``ceil(n / 8)`` ``random_raw()``
+      words, cut to ``n`` bytes.
 
     numpy's 64-bit bit generators (``PCG64``, ``Philox``, ``SFC64``) work
     as-is, minus ``Generator.seed`` (they have no ``seed`` method; build a
