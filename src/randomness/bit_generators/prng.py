@@ -7,6 +7,6 @@
 Do not use these for secrets; see :mod:`randomness.bit_generators.csrng`.
 """
 
-from ._prng import PCG64, SFC64, Philox, SplitMix64
+from .._prng import PCG64, SFC64, Philox, SplitMix64
 
 __all__ = ["SplitMix64", "PCG64", "Philox", "SFC64"]

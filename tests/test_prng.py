@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 from randomness import BitGenerator, Generator, SplitMix64
-from randomness.bit_generators import PCG64, SFC64, Philox
+from randomness.bit_generators.prng import PCG64, SFC64, Philox
 from randomness.bit_generators import prng
 
 CASES = [(PCG64, np.random.PCG64), (Philox, np.random.Philox), (SFC64, np.random.SFC64)]
@@ -98,12 +98,14 @@ class TestNumpyWrappers(unittest.TestCase):
 
 
 class TestLayout(unittest.TestCase):
-    def test_sections_and_reexports(self):
+    def test_sections(self):
         from randomness import bit_generators as bg
         from randomness.bit_generators import csrng
 
-        self.assertIs(bg.SplitMix64, prng.SplitMix64)
-        self.assertIs(bg.ChaCha20, csrng.ChaCha20)
+        self.assertIs(bg.prng, prng)
+        self.assertIs(bg.csrng, csrng)
+        # Only the two sections are public; generators live inside them.
+        self.assertEqual([n for n in dir(bg) if not n.startswith("__")], ["csrng", "prng"])
         self.assertIs(SplitMix64, prng.SplitMix64)  # top-level compat
 
     def test_import_does_not_pull_in_optional_deps(self):
@@ -114,7 +116,7 @@ class TestLayout(unittest.TestCase):
         src = str(pathlib.Path(__file__).parents[1] / "src")
         code = (f"import sys; sys.path.insert(0, {src!r});"
                 "import randomness, randomness.bit_generators as b;"
-                "b.HMAC_DRBG(); b.SplitMix64(1);"
+                "b.csrng.HMAC_DRBG(); b.prng.SplitMix64(1);"
                 "print('numpy' in sys.modules, 'Crypto' in sys.modules)")
         out = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True,
                              text=True, check=True).stdout

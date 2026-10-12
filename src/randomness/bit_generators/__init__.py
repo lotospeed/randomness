@@ -6,15 +6,9 @@ Two sections:
   *not* cryptographically secure.
 * :mod:`randomness.bit_generators.csrng` -- cryptographically secure.
 
-Everything is re-exported here.
+Import the generators from their section.
 """
 
-from .csrng import AESCounter, ChaCha20, HMAC_DRBG, SystemBitGenerator
-from .prng import PCG64, SFC64, Philox, SplitMix64
+from . import csrng, prng
 
-__all__ = [
-    # prng
-    "SplitMix64", "PCG64", "Philox", "SFC64",
-    # csrng
-    "AESCounter", "ChaCha20", "HMAC_DRBG", "SystemBitGenerator",
-]
+__all__ = ["csrng", "prng"]

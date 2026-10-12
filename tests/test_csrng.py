@@ -13,10 +13,10 @@ except ImportError:
     _aes = _cc = None
 
 from randomness import Generator, SplitMix64
-from randomness.bit_generators import HMAC_DRBG, SystemBitGenerator
+from randomness.bit_generators.csrng import HMAC_DRBG, SystemBitGenerator
 
 if _cc is not None:
-    from randomness.bit_generators import AESCounter, ChaCha20
+    from randomness.bit_generators.csrng import AESCounter, ChaCha20
 
 
 def _rotl(x, n):

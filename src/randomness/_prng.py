@@ -6,7 +6,7 @@ import os
 import struct
 from typing import Any
 
-from .._bitgen import MASK64
+from ._bitgen import MASK64
 
 __all__ = ["SplitMix64", "PCG64", "Philox", "SFC64"]
 

@@ -12,6 +12,6 @@ key material.  Like any userspace PRNG they also duplicate their state across
 ``os.fork``; reseed in the child if that matters.
 """
 
-from ._csrng import AESCounter, ChaCha20, HMAC_DRBG, SystemBitGenerator
+from .._csrng import AESCounter, ChaCha20, HMAC_DRBG, SystemBitGenerator
 
 __all__ = ["AESCounter", "ChaCha20", "HMAC_DRBG", "SystemBitGenerator"]

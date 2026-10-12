@@ -18,7 +18,7 @@ generator enable `Generator.seed`, `getstate`/`setstate`, `copy` and `pickle`.
 
 ## Bit generators
 
-`randomness.bit_generators` has two sections, both re-exported from the package:
+`randomness.bit_generators` has two sections; import each generator from its section:
 
 * `randomness.bit_generators.prng`: fast and statistically strong, **not** secure
 * `randomness.bit_generators.csrng`: cryptographically secure
@@ -26,7 +26,7 @@ generator enable `Generator.seed`, `getstate`/`setstate`, `copy` and `pickle`.
 ### prng
 
 ```python
-from randomness.bit_generators import SplitMix64, PCG64, Philox, SFC64
+from randomness.bit_generators.prng import SplitMix64, PCG64, Philox, SFC64
 
 g = Generator(PCG64(42))        # int, SeedSequence, or None for OS entropy
 ```
@@ -42,7 +42,7 @@ offered: numpy's `random_raw` returns 32-bit values for it, which breaks the
 
 ```python
 from randomness import Generator
-from randomness.bit_generators import AESCounter, ChaCha20, HMAC_DRBG, SystemBitGenerator
+from randomness.bit_generators.csrng import AESCounter, ChaCha20, HMAC_DRBG, SystemBitGenerator
 
 g = Generator(SystemBitGenerator())          # the OS CSPRNG; no seed or state
 g = Generator(HMAC_DRBG())                   # NIST SP 800-90A, stdlib only
