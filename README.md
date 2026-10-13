@@ -17,8 +17,9 @@ but every value is derived solely from `bit_generator.random_raw()` (a uniform
 generator enable `Generator.seed`, `getstate`/`setstate`, `copy` and `pickle`.
 
 A bit generator may also offer `random_bytes(n)`, the same stream as
-`random_raw()` served as bytes. `Generator.randbytes` uses it when present:
-the output is identical, only faster. Every generator here except `SplitMix64`
+`random_raw()` served as bytes. `Generator.randbytes` and `getrandbits` of 256
+bits or more (so also `randrange` over big ranges) use it when present: the
+output is identical, only faster. Every generator here except `SplitMix64`
 has it; `SystemBitGenerator`'s reads `os.urandom` directly.
 
 ## Bit generators

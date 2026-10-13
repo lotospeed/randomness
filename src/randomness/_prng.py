@@ -127,9 +127,18 @@ class _NumpyBitGenerator:
             taken.reverse()
             return struct.pack(f"<{nwords}Q", *taken)[:n]
         head = struct.pack(f"<{have}Q", *reversed(words))
-        self._words = []
-        tail = self._bg.random_raw(nwords - have).astype("<u8", copy=False).tobytes()
-        return (head + tail)[:n]
+        need = nwords - have
+        if need >= self._REFILL_WORDS:
+            fresh = self._bg.random_raw(need)
+            self._words = []
+        else:
+            # Small request: pull a whole batch and keep the rest buffered.
+            fresh = self._bg.random_raw(self._REFILL_WORDS)
+            rest = fresh[need:].tolist()
+            rest.reverse()
+            self._words = rest
+            fresh = fresh[:need]
+        return (head + fresh.astype("<u8", copy=False).tobytes())[:n]
 
     @property
     def state(self) -> dict[str, Any]:

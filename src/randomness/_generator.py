@@ -28,8 +28,9 @@ class Generator(random.Random):
     bits are used), and larger ``k`` consume ``ceil(k / 64)`` words.  The only
     state beyond the bit generator's is the cached ``gauss_next`` value.
 
-    ``randbytes`` is also overridden, to take bytes straight from bit
-    generators that offer ``random_bytes``; its output is unchanged.
+    ``randbytes`` is also overridden, and it and ``getrandbits(k)`` with
+    ``k >= 256`` take bytes straight from bit generators that offer
+    ``random_bytes``; their output is unchanged.
 
     Note that the hidden Mersenne Twister of the ``random.Random`` base class
     is never touched.
@@ -71,8 +72,16 @@ class Generator(random.Random):
             if k == 0:
                 return 0
             return (self._raw() & MASK64) >> (64 - k)
-        raw = self._raw
         words, rem = divmod(k, 64)
+        if words >= 4 and self._raw_bytes is not None:
+            # Same words, taken as bytes instead of one int at a time.  Below
+            # 256 bits the call overhead outweighs the saving.
+            if not rem:
+                return int.from_bytes(self._raw_bytes(8 * words), "little")
+            data = self._raw_bytes(8 * (words + 1))
+            top = int.from_bytes(data[8 * words :], "little") >> (64 - rem)
+            return int.from_bytes(data[: 8 * words], "little") | top << (64 * words)
+        raw = self._raw
         # Packed in one go: OR-ing words into a growing int is quadratic.
         result = int.from_bytes(
             struct.pack(f"<{words}Q", *[raw() & MASK64 for _ in range(words)]), "little"

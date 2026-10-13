@@ -77,6 +77,29 @@ class TestGeneratorRandbytes(unittest.TestCase):
                     self.assertEqual(g.randbytes(n), h.randbytes(n))
                     self.assertEqual(g.random(), h.random())
 
+    def test_getrandbits_same_output_as_word_path(self):
+        ks = [0, 1, 63, 64, 65, 127, 128, 129, 255, 256, 257, 319, 320, 1000, 1024,
+              4096, 7937, 8000, 70001, 200]
+        for fast, slow in zip(_seeded(), _seeded()):
+            with self.subTest(type(fast).__name__):
+                g, h = Generator(fast), Generator(WordsOnly(slow))
+                for k in ks:
+                    self.assertEqual(g.getrandbits(k), h.getrandbits(k))
+                    self.assertEqual(g.random(), h.random())
+                n = (1 << 2048) - 12345
+                self.assertEqual([g.randrange(n) for _ in range(20)],
+                                 [h.randrange(n) for _ in range(20)])
+
+    def test_getrandbits_range(self):
+        g = Generator(HMAC_DRBG(bytes(48)))
+        for k in (65, 128, 1000):
+            top = 0
+            for _ in range(200):
+                v = g.getrandbits(k)
+                self.assertTrue(0 <= v < 1 << k)
+                top |= v
+            self.assertEqual(top.bit_length(), k)
+
     def test_without_fast_path(self):
         g = Generator(SplitMix64(1))
         self.assertEqual(g.randbytes(13), random.Random.randbytes(Generator(SplitMix64(1)), 13))
